@@ -1,4 +1,4 @@
-name: Build
+name: CI
 
 on:
   push:
@@ -16,9 +16,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: actions/cache@v3
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo
@@ -31,14 +31,14 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install stable
 
+      - name: Format
+        run: cargo fmt --all -- --check
+
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --verbose --release
 
       - name: Clippy
         run: cargo clippy --verbose -- -D warnings
-
-      - name: Fmt
-        run: cargo fmt --all -- --check
 
       - name: Tests
         run: cargo test --verbose
