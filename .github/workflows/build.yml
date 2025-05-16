@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo
+            ~/.rustup/toolchains
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install Rust
+        run: rustup toolchain install stable
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Build
+        run: cargo build --verbose --release
+
+      - name: Clippy
+        run: cargo clippy --verbose -- -D warnings
+
+      - name: Tests
+        run: cargo test --verbose
