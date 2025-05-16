@@ -1,3 +1,5 @@
+//! Benchmark module
+
 use bincode::{config::standard, serde::encode_to_vec};
 use criterion::{BatchSize, Criterion, SamplingMode, black_box};
 use lean_imt::lean_imt::LeanIMT;
@@ -5,13 +7,15 @@ use rand::{Rng, thread_rng};
 use respire::pir::pir::{PIR, PIRRecordBytes};
 use serde::Serialize;
 use serde_json::from_slice;
-use std::{fs::read, time::Duration};
+use std::{
+    fs::read,
+    time::{Duration, Instant},
+};
 
 /// Zero record
 const ZERO_RECORD: [u8; 32] = [0; 32];
 
 /// Benchmark parameters
-#[derive(Clone, Copy)]
 pub struct BenchParams {
     pub leaf_exp: usize,
     pub batch_size: usize,
@@ -50,15 +54,86 @@ impl<R: PIR> BenchContext<R>
 where
     R::PublicParams: Serialize,
 {
-    fn new(flat: Vec<[u8; 32]>) -> Self {
+    fn setup(flat: Vec<[u8; 32]>, params: &BenchParams) -> Self {
+        let label = params.label();
         let total = flat.len();
         let rec = Box::new(move |i: usize| {
             let raw = flat.get(i).map(|x| x.as_ref()).unwrap_or(&ZERO_RECORD);
             R::RecordBytes::from_bytes(raw).unwrap()
         });
 
+        // Assert total records
+        if params.batch_size == 1 {
+            assert_eq!(total, R::NUM_RECORDS - 1);
+        } else {
+            assert_eq!(total, R::NUM_RECORDS);
+        }
+
+        println!("[{}] Initialization Report", label);
+        println!("[{}] -----------------------", label);
+
+        // Setup
+        let start = Instant::now();
         let (qk, pp) = R::setup(None);
+        let setup_ms = start.elapsed().as_secs_f64() * 1000.0;
+        println!("[{}] Setup:             {:>8.2} ms", label, setup_ms);
+
+        // Database encoding
+        let start = Instant::now();
         let (db, hint) = R::encode_db(&rec, None);
+        let encode_s = start.elapsed().as_secs_f64();
+        println!("[{}] Encode DB:         {:>8.2} s", label, encode_s);
+
+        let test_idxs: Vec<_> = (0..params.batch_size)
+            .map(|_| thread_rng().gen_range(0..total))
+            .collect();
+
+        // Query generation
+        let start = Instant::now();
+        let (probe_q, s) = R::query(&qk, &test_idxs, &hint, None);
+        let query_ms = start.elapsed().as_secs_f64() * 1000.0;
+        println!("[{}] Query:             {:>8.2} ms", label, query_ms);
+
+        // Answer computation
+        let start = Instant::now();
+        let probe_a = R::answer(&pp, &db, &probe_q, None, None);
+        let answer_ms = start.elapsed().as_secs_f64() * 1000.0;
+        println!("[{}] Answer:            {:>8.2} ms", label, answer_ms);
+
+        // Extraction
+        let start = Instant::now();
+        let _ = R::extract(&qk, &probe_a, &s, None);
+        let extract_us = start.elapsed().as_micros() as f64;
+        println!("[{}] Extract:           {:>8.2} µs", label, extract_us);
+
+        // Size section
+        println!("[{}] -----------------------", label);
+
+        // Client public parameters size
+        let pp_bytes = encode_to_vec(&pp, standard()).unwrap().len();
+        let pp_mb = pp_bytes as f64 / (1 << 20) as f64;
+        println!(
+            "[{}] Client public parameters size = {} bytes ({:.2} MB)",
+            label, pp_bytes, pp_mb
+        );
+
+        // Client query size
+        let q_bytes = encode_to_vec(&probe_q, standard()).unwrap().len();
+        let q_kb = q_bytes as f64 / (1 << 10) as f64;
+        println!(
+            "[{}] Client query size = {} bytes ({:.2} KB)",
+            label, q_bytes, q_kb
+        );
+
+        // Server answer size
+        let a_bytes = encode_to_vec(&probe_a, standard()).unwrap().len();
+        let a_kb = a_bytes as f64 / (1 << 10) as f64;
+        println!(
+            "[{}] Server answer size = {} bytes ({:.2} KB)",
+            label, a_bytes, a_kb
+        );
+
+        println!("[{}] -----------------------", label);
 
         BenchContext {
             qk,
@@ -69,37 +144,6 @@ where
             rec,
         }
     }
-
-    fn report_sizes(&self, params: &BenchParams) {
-        let pp_bytes = encode_to_vec(&self.pp, standard()).unwrap().len();
-        println!(
-            "[{}] Client public parameters size = {} bytes ({:.2} MB)",
-            params.label(),
-            pp_bytes,
-            (pp_bytes as f64) / (1 << 20) as f64
-        );
-
-        let probe_idxs: Vec<_> = (0..params.batch_size)
-            .map(|_| thread_rng().gen_range(0..self.total))
-            .collect();
-        let (probe_q, _s) = R::query(&self.qk, &probe_idxs, &self.hint, None);
-        let q_bytes = encode_to_vec(&probe_q, standard()).unwrap().len();
-        println!(
-            "[{}] Client query size = {} bytes ({:.2} KB)",
-            params.label(),
-            q_bytes,
-            (q_bytes as f64) / (1 << 10) as f64
-        );
-
-        let probe_a = R::answer(&self.pp, &self.db, &probe_q, None, None);
-        let a_bytes = encode_to_vec(&probe_a, standard()).unwrap().len();
-        println!(
-            "[{}] Server answer size = {} bytes ({:.2} KB)",
-            params.label(),
-            a_bytes,
-            (a_bytes as f64) / (1 << 10) as f64
-        );
-    }
 }
 
 /// Benchmark
@@ -107,10 +151,9 @@ pub fn bench<R: PIR>(c: &mut Criterion, bench_params: BenchParams)
 where
     R::PublicParams: Serialize,
 {
-    let flat = load_tree_flat(bench_params.leaf_exp);
-    let context = BenchContext::<R>::new(flat);
+    let flat_tree = load_tree_flat(bench_params.leaf_exp);
+    let context = BenchContext::<R>::setup(flat_tree, &bench_params);
     let label = bench_params.label();
-    context.report_sizes(&bench_params);
 
     // Setup
     {

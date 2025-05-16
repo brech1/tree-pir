@@ -1,6 +1,8 @@
+//! CLI executable
+
 use clap::{Parser, Subcommand};
-use mt_pir::tree::generate_and_save_tree;
 use std::{fs, path::Path, process::Command as ProcessCommand};
+use tree_pir::tree::generate_and_save_tree;
 
 #[derive(Parser)]
 #[command(about = "Tree generation and benchmarking CLI")]
@@ -27,7 +29,7 @@ enum Bench {
     All,
 }
 
-const EXPONENTS: &[u32] = &[10, 12, 14, 16, 20, 24];
+const EXPONENTS: &[u32] = &[12, 16, 20, 24];
 
 fn main() -> Result<(), String> {
     match Cli::parse().command {
@@ -76,7 +78,7 @@ fn run_benchmarks(bench: &Bench) -> Result<(), String> {
     }
 
     for bench in benches {
-        let exp = bench.split('_').last().unwrap().parse().unwrap();
+        let exp = bench.split('_').next_back().unwrap().parse().unwrap();
         println!("Running {bench}...");
         ensure_tree(exp);
         let status = ProcessCommand::new("cargo")

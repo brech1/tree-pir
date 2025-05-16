@@ -1,5 +1,5 @@
 [package]
-name = "mt-pir"
+name = "tree-pir"
 edition = "2024"
 license = "MIT"
 version = "0.1.0"
@@ -15,22 +15,18 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 
 # PIR
-respire = { git = "https://github.com/brech1/respire", branch = "feat/32-byte-records" }
+respire = { git = "https://github.com/brech1/respire" }
 
 # Tree
-lean-imt = { git = "https://github.com/brech1/zk-kit.rust", package = "zk-kit-lean-imt", branch = "fix/lean-imt", features = ["serde"] }
-semaphore-rs = { git = "https://github.com/brech1/semaphore-rs", branch = "fix/add-members", features = ["serde"] }
-
-[[bench]]
-name = "single_10"
-harness = false
+lean-imt = { git = "https://github.com/privacy-scaling-explorations/zk-kit.rust", package = "zk-kit-lean-imt", features = [
+    "serde",
+] }
+semaphore-rs = { git = "https://github.com/semaphore-protocol/semaphore-rs", features = [
+    "serde",
+] }
 
 [[bench]]
 name = "single_12"
-harness = false
-
-[[bench]]
-name = "single_14"
 harness = false
 
 [[bench]]
@@ -46,15 +42,7 @@ name = "single_24"
 harness = false
 
 [[bench]]
-name = "batch_10"
-harness = false
-
-[[bench]]
 name = "batch_12"
-harness = false
-
-[[bench]]
-name = "batch_14"
 harness = false
 
 [[bench]]

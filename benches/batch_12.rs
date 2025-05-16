@@ -1,5 +1,4 @@
 use criterion::{Criterion, PlottingBackend, criterion_group, criterion_main};
-use mt_pir::benchmark::{BenchParams, bench};
 use respire::{
     pir::{
         cuckoo_respire::CuckooRespireImpl, respire::RespireParamsExpanded,
@@ -7,20 +6,20 @@ use respire::{
     },
     respire,
 };
-use std::time::Duration;
+use tree_pir::benchmark::{BenchParams, bench};
 
 // Tree
 const LEAF_EXP: usize = 12;
-const N_RECORDS: usize = (1 << (LEAF_EXP + 1)) - 1;
+const N_RECORDS: usize = 8_191;
 
 // Respire config
-const N_VEC: usize = 4;
+const N_VEC: usize = 2;
 const NU_1: usize = 5;
-const NU_2: usize = 4;
+const NU_2: usize = 5;
 
 // Cuckoo config
 const BATCH_SIZE: usize = 12;
-const N_BUCKETS: usize = 19;
+const N_BUCKETS: usize = 24;
 
 const EXP_PARAMS: RespireParamsExpanded = FactoryParams::batch_32(BATCH_SIZE, N_VEC, NU_1, NU_2)
     .expand()
@@ -33,16 +32,16 @@ fn criterion_benchmark(c: &mut Criterion) {
     let bench_params = BenchParams {
         leaf_exp: LEAF_EXP,
         batch_size: BATCH_SIZE,
-        setup_t: 15,
-        setup_n: 15,
-        encode_t: 15,
-        encode_n: 15,
+        setup_t: 10,
+        setup_n: 20,
+        encode_t: 10,
+        encode_n: 10,
         query_t: 10,
-        query_n: 20,
-        answer_t: 15,
-        answer_n: 15,
-        extract_t: 10,
-        extract_n: 20,
+        query_n: 10,
+        answer_t: 50,
+        answer_n: 10,
+        extract_t: 100,
+        extract_n: 10,
     };
     bench::<CuckooRespire>(c, bench_params);
 }
@@ -50,8 +49,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default()
-        .plotting_backend(PlottingBackend::Plotters)
-        .warm_up_time(Duration::from_secs(3));
+        .plotting_backend(PlottingBackend::Plotters);
     targets = criterion_benchmark
 }
 criterion_main!(benches);

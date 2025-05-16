@@ -1,3 +1,5 @@
+//! Tree generation module
+
 use memmap2::MmapMut;
 use rand::{RngCore, SeedableRng, rngs::SmallRng};
 use rayon::prelude::*;
@@ -21,7 +23,7 @@ pub fn generate_tree(exponent: u32, output_path: &str) {
 
     let available_threads = thread::available_parallelism().unwrap().get();
     let chunk_size = (1024 * 1024).min(num_leaves as usize / available_threads + 1);
-    let num_chunks = (num_leaves as usize + chunk_size - 1) / chunk_size;
+    let num_chunks = (num_leaves as usize).div_ceil(chunk_size);
     println!(
         "Using {} threads with {} chunks",
         available_threads, num_chunks
@@ -76,9 +78,8 @@ pub fn generate_tree(exponent: u32, output_path: &str) {
         }
     });
 
-    // Build and save the tree
     println!("Building tree...");
-    let tree = build_tree_from_mmap(&mmap.lock().unwrap(), num_leaves as usize);
+    let tree = build_tree(&mmap.lock().unwrap(), num_leaves as usize);
     save_tree(&tree, output_path);
 
     // Clean up temp file
@@ -89,22 +90,23 @@ pub fn generate_tree(exponent: u32, output_path: &str) {
     println!("Tree generated and saved successfully to {}", output_path);
 }
 
-/// Builds a Semaphore tree from a memory-mapped file
-fn build_tree_from_mmap(mmap: &MmapMut, num_leaves: usize) -> Group {
-    const BATCH_SIZE: usize = 1_000_000; // 1M leaves per batch
+/// Builds Semaphore tree
+fn build_tree(mmap: &MmapMut, num_leaves: usize) -> Group {
+    const BATCH_SIZE: usize = 1_000_000;
     let mut elements = vec![[0u8; 32]; std::cmp::min(BATCH_SIZE, num_leaves)];
     let mut tree = None;
+    let num_batches = num_leaves.div_ceil(BATCH_SIZE);
 
-    for batch_idx in 0..(num_leaves + BATCH_SIZE - 1) / BATCH_SIZE {
+    for batch_idx in 0..num_batches {
         let batch_start = batch_idx * BATCH_SIZE;
         let batch_end = std::cmp::min(batch_start + BATCH_SIZE, num_leaves);
         let batch_size = batch_end - batch_start;
 
         // Read batch from mmap
-        for i in 0..batch_size {
+        for (i, element) in elements.iter_mut().take(batch_size).enumerate() {
             let element_idx = batch_start + i;
             let byte_start = element_idx * 32;
-            elements[i].copy_from_slice(&mmap[byte_start..byte_start + 32]);
+            element.copy_from_slice(&mmap[byte_start..byte_start + 32]);
         }
 
         // Create or update tree
@@ -117,19 +119,15 @@ fn build_tree_from_mmap(mmap: &MmapMut, num_leaves: usize) -> Group {
         }
 
         // Progress updates
-        if batch_idx % 5 == 0 || batch_idx == (num_leaves + BATCH_SIZE - 1) / BATCH_SIZE - 1 {
-            println!(
-                "Processed batch {}/{}",
-                batch_idx + 1,
-                (num_leaves + BATCH_SIZE - 1) / BATCH_SIZE
-            );
+        if batch_idx % 5 == 0 || batch_idx == num_batches - 1 {
+            println!("Processed batch {}/{}", batch_idx + 1, num_batches);
         }
     }
 
     tree.unwrap()
 }
 
-/// Saves the tree to a JSON file
+/// Saves tree to a JSON file
 fn save_tree(tree: &Group, output_path: &str) {
     println!("Saving tree to {}", output_path);
 
@@ -144,7 +142,7 @@ fn save_tree(tree: &Group, output_path: &str) {
     let total_elements = 2 * num_leaves - 1;
 
     let json = tree.export().unwrap();
-    let file_size_bytes = json.as_bytes().len();
+    let file_size_bytes = json.len();
     let file_size_mb = file_size_bytes as f64 / (1024.0 * 1024.0);
 
     println!("Tree stats:");
